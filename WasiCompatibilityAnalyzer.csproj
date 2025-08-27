@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>WasiCompatibilityAnalyzer</PackageId>
+    <PackageVersion>1.0.0</PackageVersion>
+    <Authors>SCE Team</Authors>
+    <Description>WebAssembly compatibility analyzer for WasiAsync framework</Description>
+    <Copyright>Copyright © SCE Team</Copyright>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddAnalyzersToOutput</TargetsForTfmSpecificContentInPackage>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- 禁用分析器开发风格警告，不影响核心功能 -->
+    <NoWarn>$(NoWarn);RS1033;RS2007;NU5128</NoWarn>
+    <!-- 设置输出路径到 WasiSparkCore\EditorTools\ -->
+    <OutputPath>..\WasiSparkCore\EditorTools\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.8.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 排除测试文件，避免分析器对自身的限制检查 -->
+    <Compile Remove="test/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 包含分析器发布跟踪文件 -->
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+  <Target Name="_AddAnalyzersToOutput">
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(OutputPath)\WasiCompatibilityAnalyzer.dll" PackagePath="analyzers\dotnet\cs\WasiCompatibilityAnalyzer.dll" />
+    </ItemGroup>
+  </Target>
+
+  <!-- 确保分析器 DLL 输出到 EditorTools 目录 -->
+  <Target Name="CopyToEditorTools" AfterTargets="Build">
+    <Copy SourceFiles="$(OutputPath)WasiCompatibilityAnalyzer.dll" 
+          DestinationFolder="..\WasiSparkCore\EditorTools\" 
+          SkipUnchangedFiles="true" />
+    <Message Text="已复制分析器到: ..\WasiSparkCore\EditorTools\WasiCompatibilityAnalyzer.dll" Importance="high" />
+  </Target>
+
+</Project>
