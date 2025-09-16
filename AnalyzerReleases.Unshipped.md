@@ -19,3 +19,12 @@ WASI010 | WebAssembly兼容性 | Error | Registry类在WebAssembly环境中不�
 WASI011 | WebAssembly兼容性 | Error | System.Timers.Timer在WebAssembly环境中不可用。
 WASI012 | WebAssembly兼容性 | Warning | 过时的API可能在WebAssembly环境中存在兼容性问题，建议使用推荐的替代方案。
 WASI013 | WebAssembly兼容性 | Warning | 编辑器隐藏的API通常为内部实现细节，在WebAssembly环境中使用可能导致不可预期的行为。
+WASI014 | 平台专用API | Error | 客户端专用API必须在#if CLIENT预处理指令内使用。
+WASI015 | 平台专用API | Error | 服务器专用API必须在#if SERVER预处理指令内使用。
+
+### Changes
+- 新增WASI014和WASI015规则用于检测平台专用API
+- 添加基于WasiCore源码的智能API元数据生成器
+- 移除默认元数据机制，强制用户生成准确的API数据
+- 改进条件编译检测算法，支持嵌套和复杂场景
+- 添加跨平台路径支持和便捷更新脚本

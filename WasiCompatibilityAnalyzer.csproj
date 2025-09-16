@@ -26,14 +26,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 排除测试文件，避免分析器对自身的限制检查 -->
+    <!-- 排除测试文件和工具文件，避免分析器对自身的限制检查 -->
     <Compile Remove="test/**/*.cs" />
+    <Compile Remove="Tools/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- 包含分析器发布跟踪文件 -->
     <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
     <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 嵌入平台API元数据 -->
+    <EmbeddedResource Include="platform-api-metadata.json" />
   </ItemGroup>
 
   <Target Name="_AddAnalyzersToOutput">

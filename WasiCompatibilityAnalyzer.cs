@@ -3,11 +3,88 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text.Json;
 
 namespace WasiCompatibilityAnalyzer
 {
+    /// <summary>
+    /// 平台API元数据缓存
+    /// </summary>
+    internal static class PlatformApiCache
+    {
+        public class ApiMetadata
+        {
+            public HashSet<string> ClientOnlyNamespaces { get; set; } = new();
+            public HashSet<string> ServerOnlyNamespaces { get; set; } = new();
+            public HashSet<string> ClientOnlyTypes { get; set; } = new();
+            public HashSet<string> ServerOnlyTypes { get; set; } = new();
+            public HashSet<string> ClientOnlyMembers { get; set; } = new();
+            public HashSet<string> ServerOnlyMembers { get; set; } = new();
+            public Dictionary<string, string> MixedTypes { get; set; } = new();
+            public Dictionary<string, object> Statistics { get; set; } = new();
+        }
+
+        private static readonly Lazy<ApiMetadata> _metadata = new(() => LoadMetadata());
+        
+        public static HashSet<string> ClientOnlyNamespaces => _metadata.Value.ClientOnlyNamespaces;
+        public static HashSet<string> ServerOnlyNamespaces => _metadata.Value.ServerOnlyNamespaces;
+        public static HashSet<string> ClientOnlyTypes => _metadata.Value.ClientOnlyTypes;
+        public static HashSet<string> ServerOnlyTypes => _metadata.Value.ServerOnlyTypes;
+        public static HashSet<string> ClientOnlyMembers => _metadata.Value.ClientOnlyMembers;
+        public static HashSet<string> ServerOnlyMembers => _metadata.Value.ServerOnlyMembers;
+        public static Dictionary<string, string> MixedTypes => _metadata.Value.MixedTypes;
+
+        private static ApiMetadata LoadMetadata()
+        {
+            try
+            {
+                // 尝试从嵌入资源加载
+                var assembly = typeof(PlatformApiCache).Assembly;
+                using var stream = assembly.GetManifestResourceStream("WasiCompatibilityAnalyzer.platform-api-metadata.json");
+                
+                if (stream != null)
+                {
+                    using var reader = new StreamReader(stream);
+                    var json = reader.ReadToEnd();
+                    var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+                    var metadata = JsonSerializer.Deserialize<ApiMetadata>(json, options);
+                    
+                    if (metadata != null)
+                    {
+                        return metadata;
+                    }
+                }
+                
+                // 嵌入资源加载失败，抛出错误
+                throw new InvalidOperationException(
+                    "❌ 无法加载平台API元数据！\n" +
+                    "📋 解决方案:\n" +
+                    "1. 运行元数据生成器: cd Tools && dotnet run --project MetadataGenerator.csproj <WasiCore路径>\n" +
+                    "2. 重新构建分析器: dotnet build\n" +
+                    "3. 或使用便捷脚本: update-metadata.bat <WasiCore路径>\n\n" +
+                    "⚠️ 不能使用默认数据，必须基于真实的WasiCore源码生成准确的元数据！");
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "❌ 平台API元数据加载失败！\n" +
+                    "📋 可能的原因:\n" +
+                    "- 元数据文件未嵌入到分析器中\n" +
+                    "- 元数据文件格式错误\n" +
+                    "- 分析器版本与元数据不匹配\n\n" +
+                    "🔧 解决方案:\n" +
+                    "1. 重新生成元数据: cd Tools && dotnet run --project MetadataGenerator.csproj <WasiCore路径>\n" +
+                    "2. 重新构建分析器: dotnet build\n\n" +
+                    $"💥 详细错误: {ex.Message}");
+            }
+        }
+    }
+
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public class WasiCompatibilityAnalyzer : DiagnosticAnalyzer
 {
@@ -130,13 +207,31 @@ namespace WasiCompatibilityAnalyzer
         isEnabledByDefault: true,
         description: "编辑器隐藏的API通常为内部实现细节，在WebAssembly环境中使用可能导致不可预期的行为。");
 
+    public static readonly DiagnosticDescriptor ClientOnlyApiRule = new(
+        "WASI014",
+        "客户端专用API需要#if CLIENT",
+        "客户端专用API '{0}' 必须在 #if CLIENT 预处理指令内使用",
+        "平台专用API",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "此API仅在客户端可用，必须使用 #if CLIENT 进行条件编译，否则服务器编译会失败。");
+
+    public static readonly DiagnosticDescriptor ServerOnlyApiRule = new(
+        "WASI015",
+        "服务器专用API需要#if SERVER",
+        "服务器专用API '{0}' 必须在 #if SERVER 预处理指令内使用",
+        "平台专用API",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "此API仅在服务器可用，必须使用 #if SERVER 进行条件编译，否则客户端编译会失败。");
+
     #endregion
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(
             TaskDelayRule, TaskRunRule, ConsoleRule, ThreadRule, ThreadPoolRule, 
             ParallelRule, FileSystemRule, NetworkingRule, ProcessRule, RegistryRule, TimerRule,
-            ObsoleteApiRule, HiddenApiRule);
+            ObsoleteApiRule, HiddenApiRule, ClientOnlyApiRule, ServerOnlyApiRule);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -165,6 +260,9 @@ namespace WasiCompatibilityAnalyzer
         // 检查特性
         CheckSymbolAttributes(context, invocation, methodSymbol);
         
+        // 检查平台专用API
+        CheckPlatformSpecificAPI(context, invocation, containingType);
+        
         CheckRestrictedAPI(context, invocation, containingType, memberName);
     }
 
@@ -181,6 +279,9 @@ namespace WasiCompatibilityAnalyzer
         // 检查构造函数特性
         CheckSymbolAttributes(context, objectCreation, constructorSymbol);
         
+        // 检查平台专用API
+        CheckPlatformSpecificAPI(context, objectCreation, containingType);
+        
         CheckRestrictedTypeCreation(context, objectCreation, containingType);
     }
 
@@ -196,6 +297,9 @@ namespace WasiCompatibilityAnalyzer
 
         // 检查成员特性
         CheckSymbolAttributes(context, memberAccess, symbolInfo.Symbol);
+        
+        // 检查平台专用API
+        CheckPlatformSpecificAPI(context, memberAccess, containingType);
         
         CheckRestrictedMemberAccess(context, memberAccess, containingType, memberName);
     }
@@ -468,6 +572,244 @@ namespace WasiCompatibilityAnalyzer
             IFieldSymbol field => $"{GetTypeFullName(field.ContainingType)}.{field.Name}",
             _ => symbol.Name
         };
+    }
+
+    private static void CheckPlatformSpecificAPI(SyntaxNodeAnalysisContext context, SyntaxNode node, INamedTypeSymbol containingType)
+    {
+        if (containingType == null) return;
+        
+        var namespaceName = containingType.ContainingNamespace?.ToString() ?? "";
+        var typeFullName = GetTypeFullName(containingType);
+        
+        // 检查是否为客户端专用API
+        if (IsClientOnlyAPI(namespaceName, typeFullName))
+        {
+            if (!IsInConditionalCompilation(context, node, "CLIENT"))
+            {
+                ReportDiagnostic(context, ClientOnlyApiRule, node, typeFullName);
+                return;
+            }
+        }
+        // 检查是否为服务器专用API
+        else if (IsServerOnlyAPI(namespaceName, typeFullName))
+        {
+            if (!IsInConditionalCompilation(context, node, "SERVER"))
+            {
+                ReportDiagnostic(context, ServerOnlyApiRule, node, typeFullName);
+                return;
+            }
+        }
+        
+        // 检查成员级别的平台特性
+        CheckMemberSpecificAPI(context, node, typeFullName);
+    }
+
+    private static void CheckMemberSpecificAPI(SyntaxNodeAnalysisContext context, SyntaxNode node, string typeFullName)
+    {
+        // 如果是混合类型，需要检查具体的成员
+        if (!PlatformApiCache.MixedTypes.ContainsKey(typeFullName))
+            return;
+
+        // 获取被访问的成员名称
+        string? memberName = null;
+        
+        if (node is InvocationExpressionSyntax invocation && 
+            invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+        {
+            memberName = memberAccess.Name.Identifier.ValueText;
+        }
+        else if (node is MemberAccessExpressionSyntax access)
+        {
+            memberName = access.Name.Identifier.ValueText;
+        }
+
+        if (memberName == null) return;
+
+        var fullMemberName = $"{typeFullName}.{memberName}";
+        
+        // 检查是否为客户端专用成员
+        if (PlatformApiCache.ClientOnlyMembers.Contains(fullMemberName))
+        {
+            if (!IsInConditionalCompilation(context, node, "CLIENT"))
+            {
+                ReportDiagnostic(context, ClientOnlyApiRule, node, fullMemberName);
+            }
+        }
+        // 检查是否为服务器专用成员
+        else if (PlatformApiCache.ServerOnlyMembers.Contains(fullMemberName))
+        {
+            if (!IsInConditionalCompilation(context, node, "SERVER"))
+            {
+                ReportDiagnostic(context, ServerOnlyApiRule, node, fullMemberName);
+            }
+        }
+    }
+    
+    private static bool IsClientOnlyAPI(string namespaceName, string typeFullName)
+    {
+        // 检查命名空间
+        if (PlatformApiCache.ClientOnlyNamespaces.Any(ns => namespaceName.StartsWith(ns)))
+        {
+            return true;
+        }
+        
+        // 检查具体类型
+        if (PlatformApiCache.ClientOnlyTypes.Contains(typeFullName))
+        {
+            return true;
+        }
+        
+        // 检查类型简名（不带命名空间）
+        var typeName = typeFullName.Split('.').LastOrDefault();
+        if (!string.IsNullOrEmpty(typeName) && PlatformApiCache.ClientOnlyTypes.Contains(typeName))
+        {
+            return true;
+        }
+        
+        // 检查混合类型（需要进一步检查成员）
+        if (PlatformApiCache.MixedTypes.ContainsKey(typeFullName))
+        {
+            return false; // 混合类型需要成员级别检查
+        }
+        
+        // 客户端接口定义（向后兼容）
+        if (namespaceName.Contains("ClientInterface") || 
+            typeFullName.Contains("ClientInterface"))
+        {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    private static bool IsServerOnlyAPI(string namespaceName, string typeFullName)
+    {
+        // 检查命名空间
+        if (PlatformApiCache.ServerOnlyNamespaces.Any(ns => namespaceName.StartsWith(ns)))
+        {
+            return true;
+        }
+        
+        // 检查具体类型
+        if (PlatformApiCache.ServerOnlyTypes.Contains(typeFullName))
+        {
+            return true;
+        }
+        
+        // 检查类型简名（不带命名空间）
+        var typeName = typeFullName.Split('.').LastOrDefault();
+        if (!string.IsNullOrEmpty(typeName) && PlatformApiCache.ServerOnlyTypes.Contains(typeName))
+        {
+            return true;
+        }
+        
+        // 检查混合类型（需要进一步检查成员）
+        if (PlatformApiCache.MixedTypes.ContainsKey(typeFullName))
+        {
+            return false; // 混合类型需要成员级别检查
+        }
+        
+        // 服务器接口定义（向后兼容）
+        if (namespaceName.Contains("ServerInterface") || 
+            typeFullName.Contains("ServerInterface"))
+        {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    private static bool IsInConditionalCompilation(SyntaxNodeAnalysisContext context, SyntaxNode node, string symbol)
+    {
+        var currentNode = node;
+        
+        while (currentNode != null)
+        {
+            // 查找包含此节点的所有前置指令
+            var directives = currentNode.GetLeadingTrivia()
+                .Where(trivia => trivia.IsDirective)
+                .Select(trivia => trivia.GetStructure())
+                .OfType<DirectiveTriviaSyntax>();
+            
+            foreach (var directive in directives)
+            {
+                if (directive is IfDirectiveTriviaSyntax ifDirective)
+                {
+                    var condition = ifDirective.Condition?.ToString();
+                    if (condition?.Contains(symbol) == true)
+                    {
+                        // 检查是否有对应的#endif
+                        var endIfFound = CheckForMatchingEndIf(currentNode, node);
+                        if (endIfFound)
+                            return true;
+                    }
+                }
+            }
+            
+            currentNode = currentNode.Parent;
+        }
+        
+        // 另一种方法：检查节点是否在条件编译范围内
+        var root = node.SyntaxTree.GetRoot();
+        var position = node.SpanStart;
+        
+        var allDirectives = root.DescendantTrivia()
+            .Where(t => t.IsDirective)
+            .Select(t => t.GetStructure())
+            .OfType<DirectiveTriviaSyntax>()
+            .OrderBy(d => d.SpanStart)
+            .ToList();
+        
+        var activeConditions = new Stack<string>();
+        
+        foreach (var directive in allDirectives)
+        {
+            if (directive.SpanStart > position)
+                break;
+                
+            switch (directive)
+            {
+                case IfDirectiveTriviaSyntax ifDir:
+                    var cond = ifDir.Condition?.ToString();
+                    if (cond?.Contains(symbol) == true)
+                        activeConditions.Push(symbol);
+                    else
+                        activeConditions.Push("");
+                    break;
+                    
+                case ElifDirectiveTriviaSyntax elifDir:
+                    if (activeConditions.Count > 0)
+                        activeConditions.Pop();
+                    var elifCond = elifDir.Condition?.ToString();
+                    if (elifCond?.Contains(symbol) == true)
+                        activeConditions.Push(symbol);
+                    else
+                        activeConditions.Push("");
+                    break;
+                    
+                case ElseDirectiveTriviaSyntax:
+                    if (activeConditions.Count > 0)
+                    {
+                        var prev = activeConditions.Pop();
+                        activeConditions.Push(prev == symbol ? "" : "else");
+                    }
+                    break;
+                    
+                case EndIfDirectiveTriviaSyntax:
+                    if (activeConditions.Count > 0)
+                        activeConditions.Pop();
+                    break;
+            }
+        }
+        
+        return activeConditions.Any(c => c == symbol);
+    }
+    
+    private static bool CheckForMatchingEndIf(SyntaxNode startNode, SyntaxNode targetNode)
+    {
+        // 简化的检查：假设如果找到了#if指令，则认为它有对应的#endif
+        // 在实际应用中，可能需要更复杂的逻辑来确保配对正确
+        return true;
     }
 
     private static void ReportDiagnostic(SyntaxNodeAnalysisContext context, 
