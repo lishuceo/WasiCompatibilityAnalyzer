@@ -17,6 +17,8 @@
     <NoWarn>$(NoWarn);RS1033;RS2007;NU5128</NoWarn>
     <!-- 设置输出路径到 WasiCoreSDK\EditorTools\ -->
     <OutputPath>../WasiCoreSDK/tools/CodeAnalyzer/</OutputPath>
+    <!-- 将NuGet包输出到单独的目录，避免污染工具目录 -->
+    <PackageOutputPath>bin/packages/</PackageOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
