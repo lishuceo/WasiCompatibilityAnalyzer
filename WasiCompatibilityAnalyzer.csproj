@@ -15,8 +15,8 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <!-- 禁用分析器开发风格警告，不影响核心功能 -->
     <NoWarn>$(NoWarn);RS1033;RS2007;NU5128</NoWarn>
-    <!-- 设置输出路径到 WasiSparkCore\EditorTools\ -->
-    <OutputPath>..\WasiSparkCore\EditorTools\</OutputPath>
+    <!-- 设置输出路径到 WasiCoreSDK\EditorTools\ -->
+    <OutputPath>../WasiCoreSDK/tools/CodeAnalyzer/</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,6 +29,8 @@
     <!-- 排除测试文件和工具文件，避免分析器对自身的限制检查 -->
     <Compile Remove="test/**/*.cs" />
     <Compile Remove="Tools/**/*.cs" />
+    <Compile Remove="MetadataTest/**/*.cs" />
+    <Compile Remove="AnalyzerTest/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -44,16 +46,16 @@
 
   <Target Name="_AddAnalyzersToOutput">
     <ItemGroup>
-      <TfmSpecificPackageFile Include="$(OutputPath)\WasiCompatibilityAnalyzer.dll" PackagePath="analyzers\dotnet\cs\WasiCompatibilityAnalyzer.dll" />
+      <TfmSpecificPackageFile Include="$(OutputPath)/WasiCompatibilityAnalyzer.dll" PackagePath="analyzers/dotnet/cs/WasiCompatibilityAnalyzer.dll" />
     </ItemGroup>
   </Target>
 
   <!-- 确保分析器 DLL 输出到 EditorTools 目录 -->
   <Target Name="CopyToEditorTools" AfterTargets="Build">
     <Copy SourceFiles="$(OutputPath)WasiCompatibilityAnalyzer.dll" 
-          DestinationFolder="..\WasiSparkCore\EditorTools\" 
+          DestinationFolder="../WasiCoreSDK/tools/CodeAnalyzer/" 
           SkipUnchangedFiles="true" />
-    <Message Text="已复制分析器到: ..\WasiSparkCore\EditorTools\WasiCompatibilityAnalyzer.dll" Importance="high" />
+    <Message Text="已复制分析器到: ../WasiCoreSDK/tools/CodeAnalyzer/WasiCompatibilityAnalyzer.dll" Importance="high" />
   </Target>
 
 </Project>

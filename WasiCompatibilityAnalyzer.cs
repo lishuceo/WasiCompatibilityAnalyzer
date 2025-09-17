@@ -19,8 +19,10 @@ namespace WasiCompatibilityAnalyzer
     {
         public class ApiMetadata
         {
-            public HashSet<string> ClientOnlyNamespaces { get; set; } = new();
-            public HashSet<string> ServerOnlyNamespaces { get; set; } = new();
+            // 🔧 移除命名空间级别的分类，只保留精确的类型和成员级别分析
+            // public HashSet<string> ClientOnlyNamespaces { get; set; } = new();
+            // public HashSet<string> ServerOnlyNamespaces { get; set; } = new();
+            
             public HashSet<string> ClientOnlyTypes { get; set; } = new();
             public HashSet<string> ServerOnlyTypes { get; set; } = new();
             public HashSet<string> ClientOnlyMembers { get; set; } = new();
@@ -31,8 +33,10 @@ namespace WasiCompatibilityAnalyzer
 
         private static readonly Lazy<ApiMetadata> _metadata = new(() => LoadMetadata());
         
-        public static HashSet<string> ClientOnlyNamespaces => _metadata.Value.ClientOnlyNamespaces;
-        public static HashSet<string> ServerOnlyNamespaces => _metadata.Value.ServerOnlyNamespaces;
+        // 🔧 移除命名空间级别的属性，只保留精确的类型和成员级别访问
+        // public static HashSet<string> ClientOnlyNamespaces => _metadata.Value.ClientOnlyNamespaces;
+        // public static HashSet<string> ServerOnlyNamespaces => _metadata.Value.ServerOnlyNamespaces;
+        
         public static HashSet<string> ClientOnlyTypes => _metadata.Value.ClientOnlyTypes;
         public static HashSet<string> ServerOnlyTypes => _metadata.Value.ServerOnlyTypes;
         public static HashSet<string> ClientOnlyMembers => _metadata.Value.ClientOnlyMembers;
@@ -647,77 +651,50 @@ namespace WasiCompatibilityAnalyzer
     
     private static bool IsClientOnlyAPI(string namespaceName, string typeFullName)
     {
-        // 检查命名空间
-        if (PlatformApiCache.ClientOnlyNamespaces.Any(ns => namespaceName.StartsWith(ns)))
-        {
-            return true;
-        }
+        // 🔧 严谨的检查：只基于精确的元数据，移除假设性判断
         
-        // 检查具体类型
+        // 1. 检查具体类型（最精确）
         if (PlatformApiCache.ClientOnlyTypes.Contains(typeFullName))
         {
             return true;
         }
         
-        // 检查类型简名（不带命名空间）
-        var typeName = typeFullName.Split('.').LastOrDefault();
-        if (!string.IsNullOrEmpty(typeName) && PlatformApiCache.ClientOnlyTypes.Contains(typeName))
-        {
-            return true;
-        }
-        
-        // 检查混合类型（需要进一步检查成员）
+        // 2. 检查混合类型（需要进一步检查成员）
         if (PlatformApiCache.MixedTypes.ContainsKey(typeFullName))
         {
             return false; // 混合类型需要成员级别检查
         }
         
-        // 客户端接口定义（向后兼容）
-        if (namespaceName.Contains("ClientInterface") || 
-            typeFullName.Contains("ClientInterface"))
-        {
-            return true;
-        }
+        // 🔧 已移除：命名空间级别的检查
+        // 原因：完全依赖精确的类型和成员列表，避免假设性判断
         
         return false;
     }
     
     private static bool IsServerOnlyAPI(string namespaceName, string typeFullName)
     {
-        // 检查命名空间
-        if (PlatformApiCache.ServerOnlyNamespaces.Any(ns => namespaceName.StartsWith(ns)))
-        {
-            return true;
-        }
+        // 🔧 严谨的检查：只基于精确的元数据，移除假设性判断
         
-        // 检查具体类型
+        // 1. 检查具体类型（最精确）
         if (PlatformApiCache.ServerOnlyTypes.Contains(typeFullName))
         {
             return true;
         }
         
-        // 检查类型简名（不带命名空间）
-        var typeName = typeFullName.Split('.').LastOrDefault();
-        if (!string.IsNullOrEmpty(typeName) && PlatformApiCache.ServerOnlyTypes.Contains(typeName))
-        {
-            return true;
-        }
-        
-        // 检查混合类型（需要进一步检查成员）
+        // 2. 检查混合类型（需要进一步检查成员）
         if (PlatformApiCache.MixedTypes.ContainsKey(typeFullName))
         {
             return false; // 混合类型需要成员级别检查
         }
         
-        // 服务器接口定义（向后兼容）
-        if (namespaceName.Contains("ServerInterface") || 
-            typeFullName.Contains("ServerInterface"))
-        {
-            return true;
-        }
+        // 🔧 已移除：命名空间级别的检查
+        // 原因：完全依赖精确的类型和成员列表，避免假设性判断
         
         return false;
     }
+
+    // 🔧 已移除：ShouldUseNamespaceAsBackup 和 IsConfigurationNamespace 方法
+    // 原因：分析器现在完全依赖精确的类型和成员列表，不再使用命名空间级别的判断
     
     private static bool IsInConditionalCompilation(SyntaxNodeAnalysisContext context, SyntaxNode node, string symbol)
     {

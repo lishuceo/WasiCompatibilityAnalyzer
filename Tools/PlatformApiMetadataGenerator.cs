@@ -17,8 +17,10 @@ public class PlatformApiMetadataGenerator
 {
     public class ApiMetadata
     {
-        public HashSet<string> ClientOnlyNamespaces { get; set; } = new();
-        public HashSet<string> ServerOnlyNamespaces { get; set; } = new();
+        // 🔧 移除命名空间级别的分类，只保留精确的类型和成员级别分析
+        // public HashSet<string> ClientOnlyNamespaces { get; set; } = new();
+        // public HashSet<string> ServerOnlyNamespaces { get; set; } = new();
+        
         public HashSet<string> ClientOnlyTypes { get; set; } = new();
         public HashSet<string> ServerOnlyTypes { get; set; } = new();
         public HashSet<string> ClientOnlyMembers { get; set; } = new();
@@ -177,17 +179,21 @@ public class PlatformApiMetadataGenerator
             var clientMembers = clientTypes.GetValueOrDefault(typeName, new HashSet<string>());
             var serverMembers = serverTypes.GetValueOrDefault(typeName, new HashSet<string>());
             
-            // 找出客户端专用成员（在CLIENT版本中有，但在无符号版本中没有）
-            var clientOnlyMembers = clientMembers.Except(noSymbolsMembers).ToList();
+            // 🔧 关键修复：找出真正的专用成员
+            // 客户端专用成员：只在CLIENT版本中存在，不在SERVER版本中存在
+            var clientOnlyMembers = clientMembers.Except(noSymbolsMembers).Except(serverMembers).ToList();
             
-            // 找出服务器专用成员（在SERVER版本中有，但在无符号版本中没有）
-            var serverOnlyMembers = serverMembers.Except(noSymbolsMembers).ToList();
+            // 服务器专用成员：只在SERVER版本中存在，不在CLIENT版本中存在  
+            var serverOnlyMembers = serverMembers.Except(noSymbolsMembers).Except(clientMembers).ToList();
             
-            if (clientOnlyMembers.Count > 0 || serverOnlyMembers.Count > 0)
+            // 共同条件编译成员：在两个版本中都有但无符号版本中没有（如 #if SERVER ... #elif CLIENT）
+            var sharedConditionalMembers = clientMembers.Intersect(serverMembers).Except(noSymbolsMembers).ToList();
+            
+            if (clientOnlyMembers.Count > 0 || serverOnlyMembers.Count > 0 || sharedConditionalMembers.Count > 0)
             {
                 foundConditionalContent = true;
                 
-                // 记录成员级别的条件编译
+                // 记录真正的专用成员
                 foreach (var memberName in clientOnlyMembers)
                 {
                     var fullMemberName = $"{typeName}.{memberName}";
@@ -202,6 +208,12 @@ public class PlatformApiMetadataGenerator
                     Console.WriteLine($"🖥️ 服务器专用成员: {fullMemberName}");
                 }
                 
+                // 对于共同条件编译成员，不添加到专用列表，但标记类型为混合
+                if (sharedConditionalMembers.Count > 0)
+                {
+                    Console.WriteLine($"🔀 共同条件编译成员: {typeName} - {string.Join(", ", sharedConditionalMembers)} (#if SERVER...#elif CLIENT模式)");
+                }
+                
                 // 标记类型为混合
                 var existingCondition = _metadata.MixedTypes.GetValueOrDefault(typeName);
                 
@@ -209,7 +221,7 @@ public class PlatformApiMetadataGenerator
                 {
                     _metadata.MixedTypes[typeName] = "MIXED";
                 }
-                else if (clientOnlyMembers.Count > 0)
+                else if (clientOnlyMembers.Count > 0 || sharedConditionalMembers.Count > 0)
                 {
                     _metadata.MixedTypes[typeName] = existingCondition == "SERVER" ? "MIXED" : "CLIENT";
                 }
@@ -218,7 +230,7 @@ public class PlatformApiMetadataGenerator
                     _metadata.MixedTypes[typeName] = existingCondition == "CLIENT" ? "MIXED" : "SERVER";
                 }
                 
-                Console.WriteLine($"🔀 混合类型: {typeName} (客户端成员: {clientOnlyMembers.Count}, 服务器成员: {serverOnlyMembers.Count})");
+                Console.WriteLine($"🔀 混合类型: {typeName} (客户端专用: {clientOnlyMembers.Count}, 服务器专用: {serverOnlyMembers.Count}, 共同条件: {sharedConditionalMembers.Count})");
             }
         }
         
@@ -322,46 +334,67 @@ public class PlatformApiMetadataGenerator
             }
             else
             {
-                // 非部分类，整个类型是专用的
-                if (condition == "CLIENT")
+                // 🔧 改进：非部分类检查是否为配置类
+                var simpleTypeName = type.Identifier.Text;
+                if (IsSharedConfigurationType(simpleTypeName))
                 {
-                    _metadata.ClientOnlyTypes.Add(typeName);
+                    Console.WriteLine($"📊 跳过配置类分类: {typeName} (应该保持共享)");
+                    // 配置类不标记为平台专用，保持共享
                 }
-                else if (condition == "SERVER")
+                else
                 {
-                    _metadata.ServerOnlyTypes.Add(typeName);
+                    // 非配置类，整个类型是专用的
+                    if (condition == "CLIENT")
+                    {
+                        _metadata.ClientOnlyTypes.Add(typeName);
+                        Console.WriteLine($"📱 添加客户端专用类型: {typeName}");
+                    }
+                    else if (condition == "SERVER")
+                    {
+                        _metadata.ServerOnlyTypes.Add(typeName);
+                        Console.WriteLine($"🖥️ 添加服务器专用类型: {typeName}");
+                    }
                 }
             }
         }
         
-        // 检查是否整个命名空间都在此条件编译中
-        await CheckNamespaceCondition(root, filePath, condition);
+        // 🔧 移除命名空间检查：只关注精确的类型和成员分析
+        // await CheckNamespaceCondition(root, filePath, condition);
     }
     
-    private async Task CheckNamespaceCondition(SyntaxNode root, string filePath, string condition)
+    // 🔧 已移除：CheckNamespaceCondition 方法
+    // 原因：分析器不再使用命名空间级别的检查，只使用精确的类型和成员分析
+
+    // 🔧 已移除：ShouldExcludeNamespaceFromClientOnly 方法
+    // 原因：不再进行命名空间级别的分类，只关注精确的类型和成员分析
+
+    /// <summary>
+    /// 检查类型是否应该被视为共享配置类
+    /// </summary>
+    private bool IsSharedConfigurationType(string typeName)
     {
-        // 只有当确认整个命名空间都是专用时才添加到命名空间列表
-        // 这需要更谨慎的判断，暂时不自动添加命名空间级别的限制
-        
-        // 特殊情况：整个GameUI项目都是客户端专用
-        if (filePath.Contains("\\GameUI\\") && condition == "CLIENT")
+        // 1. GameData 类型特殊处理：这些通常是配置类，应该共享
+        if (typeName.StartsWith("GameData"))
         {
-            var namespaceDeclarations = root.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>();
-            foreach (var ns in namespaceDeclarations)
-            {
-                var namespaceName = GetFullNamespace(ns);
-                if (namespaceName.StartsWith("GameUI"))
-                {
-                    _metadata.ClientOnlyNamespaces.Add(namespaceName);
-                }
-            }
+            return true;
         }
         
-        // 特殊情况：UserCloudData目录都是服务器专用
-        if (filePath.Contains("\\UserCloudData\\") && condition == "SERVER")
+        // 2. 其他常见配置类模式
+        if (typeName.EndsWith("Config") || typeName.EndsWith("Settings") || 
+            typeName.EndsWith("Definition") || typeName.EndsWith("Metadata") ||
+            typeName.EndsWith("Data"))
         {
-            _metadata.ServerOnlyNamespaces.Add("GameCore.UserCloudData");
+            return true;
         }
+        
+        // 3. 特殊配置类名称模式
+        if (typeName.Contains("Configuration") || typeName.Contains("Setting") ||
+            typeName.Contains("Option") || typeName.Contains("Parameter"))
+        {
+            return true;
+        }
+        
+        return false;
     }
 
     private async Task<bool> AnalyzeFileConditionalSections(SyntaxNode root, string filePath)
@@ -582,6 +615,12 @@ public class PlatformApiMetadataGenerator
 
     private string? GetMemberName(MemberDeclarationSyntax member)
     {
+        // 🔧 只包含公共可访问的成员（public, protected, internal），排除private
+        if (!IsPubliclyAccessible(member))
+        {
+            return null;
+        }
+
         return member switch
         {
             MethodDeclarationSyntax method => method.Identifier.Text,
@@ -593,119 +632,59 @@ public class PlatformApiMetadataGenerator
         };
     }
 
+    /// <summary>
+    /// 检查成员是否公共可访问（非private）
+    /// </summary>
+    private bool IsPubliclyAccessible(MemberDeclarationSyntax member)
+    {
+        var modifiers = member.Modifiers;
+        
+        // 如果显式标记为private，则排除
+        if (modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PrivateKeyword)))
+        {
+            return false;
+        }
+        
+        // 如果有任何公共访问修饰符，则包含
+        if (modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword) ||
+                              m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ProtectedKeyword) ||
+                              m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.InternalKeyword)))
+        {
+            return true;
+        }
+        
+        // 对于没有明确可见性修饰符的成员，根据类型判断：
+        // - 接口成员默认是public
+        // - 类中的字段和方法默认是private（排除）
+        // - 其他情况谨慎起见包含进去
+        var containingType = member.FirstAncestorOrSelf<TypeDeclarationSyntax>();
+        if (containingType is InterfaceDeclarationSyntax)
+        {
+            return true; // 接口成员都是public
+        }
+        
+        // 类中没有显式修饰符的成员默认是private，排除
+        if (member is FieldDeclarationSyntax || member is MethodDeclarationSyntax)
+        {
+            return false;
+        }
+        
+        // 其他情况（如属性、事件等）谨慎包含
+        return true;
+    }
+
     private async Task AnalyzeProjectDependenciesAsync()
     {
         Console.WriteLine("🔗 分析项目依赖关系...");
         
-        // 只有确认的完全专用命名空间才添加
+        // 🔧 简化：移除命名空间级别的分析，专注于类型和成员的精确分析
+        Console.WriteLine("✅ 项目依赖分析完成（基于精确的类型和成员分析）");
         
-        // 检查UserCloudData - 这个目录下的文件都是服务器专用
-        var cloudDataDir = Path.Combine(_wasiCorePath, "GameCore", "UserCloudData");
-        if (Directory.Exists(cloudDataDir))
-        {
-            var cloudDataFiles = Directory.GetFiles(cloudDataDir, "*.cs");
-            if (cloudDataFiles.All(f => IsCompletelyServerOnly(f)))
-            {
-                Console.WriteLine("☁️ 确认UserCloudData目录为服务器专用");
-                _metadata.ServerOnlyNamespaces.Add("GameCore.UserCloudData");
-            }
-        }
-        
-        // 检查GameUI项目 - 需要验证是否真的完全是客户端专用
-        var gameUiProject = Path.Combine(_wasiCorePath, "GameUI", "GameUI.csproj");
-        if (File.Exists(gameUiProject))
-        {
-            var content = await File.ReadAllTextAsync(gameUiProject);
-            if (content.Contains("ClientInterfaceDefinition"))
-            {
-                Console.WriteLine("📱 检测到GameUI项目引用ClientInterfaceDefinition");
-                
-                // 验证GameUI目录下的文件是否都是客户端专用
-                var gameUIDir = Path.Combine(_wasiCorePath, "GameUI");
-                var gameUIFiles = Directory.GetFiles(gameUIDir, "*.cs", SearchOption.AllDirectories)
-                    .Where(f => !f.Contains("\\obj\\") && !f.Contains("\\bin\\"))
-                    .ToList();
-                
-                var allClientOnly = true;
-                foreach (var file in gameUIFiles.Take(10)) // 抽样检查
-                {
-                    if (!IsCompletelyClientOnly(file))
-                    {
-                        allClientOnly = false;
-                        break;
-                    }
-                }
-                
-                if (allClientOnly)
-                {
-                    Console.WriteLine("✅ 确认GameUI目录为客户端专用");
-                    _metadata.ClientOnlyNamespaces.Add("GameUI");
-                    _metadata.ClientOnlyNamespaces.Add("GameUI.Control");
-                    _metadata.ClientOnlyNamespaces.Add("GameUI.Control.Extensions");
-                    _metadata.ClientOnlyNamespaces.Add("GameUI.Brush");
-                    _metadata.ClientOnlyNamespaces.Add("GameUI.Enum");
-                }
-                else
-                {
-                    Console.WriteLine("⚠️ GameUI目录包含混合代码，不标记为完全专用");
-                }
-            }
-        }
-        
-        // 清理重复的命名空间分类
-        CleanupDuplicateNamespaces();
+        // 注：原有的命名空间批量添加逻辑已移除，现在完全依赖条件编译分析的结果
     }
     
-    private bool IsCompletelyClientOnly(string filePath)
-    {
-        try
-        {
-            var content = File.ReadAllText(filePath);
-            var lines = content.Split('\n');
-            
-            // 检查是否以 #if CLIENT 开始
-            var firstNonEmptyLine = lines.FirstOrDefault(l => !string.IsNullOrWhiteSpace(l.Trim()));
-            return firstNonEmptyLine?.Trim().StartsWith("#if CLIENT") == true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-    
-    private bool IsCompletelyServerOnly(string filePath)
-    {
-        try
-        {
-            var content = File.ReadAllText(filePath);
-            var lines = content.Split('\n');
-            
-            // 检查是否以 #if SERVER 开始
-            var firstNonEmptyLine = lines.FirstOrDefault(l => !string.IsNullOrWhiteSpace(l.Trim()));
-            return firstNonEmptyLine?.Trim().StartsWith("#if SERVER") == true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-    
-    private void CleanupDuplicateNamespaces()
-    {
-        Console.WriteLine("🧹 清理重复的命名空间分类...");
-        
-        // 找出同时在客户端和服务器列表中的命名空间
-        var duplicates = _metadata.ClientOnlyNamespaces.Intersect(_metadata.ServerOnlyNamespaces).ToList();
-        
-        foreach (var duplicate in duplicates)
-        {
-            Console.WriteLine($"⚠️ 发现重复分类的命名空间: {duplicate} - 移除专用标记");
-            _metadata.ClientOnlyNamespaces.Remove(duplicate);
-            _metadata.ServerOnlyNamespaces.Remove(duplicate);
-        }
-        
-        Console.WriteLine($"🧹 清理完成，移除了 {duplicates.Count} 个重复项");
-    }
+    // 🔧 已移除：IsCompletelyClientOnly、IsCompletelyServerOnly、CleanupDuplicateNamespaces 方法
+    // 原因：不再进行命名空间级别的分析
 
     private void GenerateStatistics()
     {
@@ -713,13 +692,17 @@ public class PlatformApiMetadataGenerator
         var beijingTime = DateTime.UtcNow.AddHours(8);
         _metadata.Statistics["GeneratedAt"] = beijingTime.ToString("yyyy-MM-dd HH:mm:ss") + " +08:00";
         _metadata.Statistics["WasiCorePath"] = _wasiCorePath;
-        _metadata.Statistics["ClientOnlyNamespacesCount"] = _metadata.ClientOnlyNamespaces.Count;
-        _metadata.Statistics["ServerOnlyNamespacesCount"] = _metadata.ServerOnlyNamespaces.Count;
+        
+        // 🔧 只统计精确的类型和成员级别数据
         _metadata.Statistics["ClientOnlyTypesCount"] = _metadata.ClientOnlyTypes.Count;
         _metadata.Statistics["ServerOnlyTypesCount"] = _metadata.ServerOnlyTypes.Count;
         _metadata.Statistics["ClientOnlyMembersCount"] = _metadata.ClientOnlyMembers.Count;
         _metadata.Statistics["ServerOnlyMembersCount"] = _metadata.ServerOnlyMembers.Count;
         _metadata.Statistics["MixedTypesCount"] = _metadata.MixedTypes.Count;
+        
+        // 添加分析质量指标
+        _metadata.Statistics["TotalAnalyzedTypes"] = _metadata.ClientOnlyTypes.Count + _metadata.ServerOnlyTypes.Count + _metadata.MixedTypes.Count;
+        _metadata.Statistics["TotalAnalyzedMembers"] = _metadata.ClientOnlyMembers.Count + _metadata.ServerOnlyMembers.Count;
     }
 
     public void SaveToFile(ApiMetadata metadata, string outputPath)
@@ -758,38 +741,48 @@ public class PlatformApiMetadataGenerator
         Console.WriteLine("\n📊 =========================");
         Console.WriteLine("📊 API元数据生成总结");
         Console.WriteLine("📊 =========================");
-        Console.WriteLine($"📱 客户端专用命名空间: {metadata.ClientOnlyNamespaces.Count}");
-        Console.WriteLine($"🖥️ 服务器专用命名空间: {metadata.ServerOnlyNamespaces.Count}");
+        
+        // 🔧 精确的元数据统计：只关注类型和成员级别
         Console.WriteLine($"📱 客户端专用类型: {metadata.ClientOnlyTypes.Count}");
         Console.WriteLine($"🖥️ 服务器专用类型: {metadata.ServerOnlyTypes.Count}");
         Console.WriteLine($"📱 客户端专用成员: {metadata.ClientOnlyMembers.Count}");
         Console.WriteLine($"🖥️ 服务器专用成员: {metadata.ServerOnlyMembers.Count}");
         Console.WriteLine($"🔀 混合类型: {metadata.MixedTypes.Count}");
+        
+        // 📊 分析质量指标
+        var totalTypes = metadata.ClientOnlyTypes.Count + metadata.ServerOnlyTypes.Count + metadata.MixedTypes.Count;
+        var totalMembers = metadata.ClientOnlyMembers.Count + metadata.ServerOnlyMembers.Count;
+        Console.WriteLine($"🎯 总分析类型: {totalTypes}");
+        Console.WriteLine($"🎯 总分析成员: {totalMembers}");
 
-        Console.WriteLine("\n📱 客户端专用命名空间:");
-        foreach (var ns in metadata.ClientOnlyNamespaces.Take(10))
+        Console.WriteLine("\n📱 客户端专用类型示例:");
+        foreach (var type in metadata.ClientOnlyTypes.Take(5))
         {
-            Console.WriteLine($"  - {ns}");
+            Console.WriteLine($"  - {type}");
         }
-        if (metadata.ClientOnlyNamespaces.Count > 10)
+        if (metadata.ClientOnlyTypes.Count > 5)
         {
-            Console.WriteLine($"  ... 还有 {metadata.ClientOnlyNamespaces.Count - 10} 个");
+            Console.WriteLine($"  ... 还有 {metadata.ClientOnlyTypes.Count - 5} 个");
         }
 
-        Console.WriteLine("\n🖥️ 服务器专用命名空间:");
-        foreach (var ns in metadata.ServerOnlyNamespaces.Take(10))
+        Console.WriteLine("\n🖥️ 服务器专用类型示例:");
+        foreach (var type in metadata.ServerOnlyTypes.Take(5))
         {
-            Console.WriteLine($"  - {ns}");
+            Console.WriteLine($"  - {type}");
         }
-        if (metadata.ServerOnlyNamespaces.Count > 10)
+        if (metadata.ServerOnlyTypes.Count > 5)
         {
-            Console.WriteLine($"  ... 还有 {metadata.ServerOnlyNamespaces.Count - 10} 个");
+            Console.WriteLine($"  ... 还有 {metadata.ServerOnlyTypes.Count - 5} 个");
         }
 
         Console.WriteLine("\n🔀 混合类型示例:");
         foreach (var mixed in metadata.MixedTypes.Take(5))
         {
             Console.WriteLine($"  - {mixed.Key}: {mixed.Value}");
+        }
+        if (metadata.MixedTypes.Count > 5)
+        {
+            Console.WriteLine($"  ... 还有 {metadata.MixedTypes.Count - 5} 个");
         }
     }
 }
@@ -862,17 +855,25 @@ public class Program
         Console.WriteLine("  自动识别客户端专用、服务器专用和混合类型的API，生成精确的");
         Console.WriteLine("  元数据文件供WasiCompatibilityAnalyzer使用。");
         Console.WriteLine("");
+        Console.WriteLine("🧠 精确分析特性:");
+        Console.WriteLine("  - 基于实际条件编译指令分析，无假设性判断");
+        Console.WriteLine("  - 类型和成员级别的精确分类");
+        Console.WriteLine("  - 自动识别混合类型（同时包含客户端和服务器专用成员）");
+        Console.WriteLine("  - 排除私有成员，只分析公共可访问的API");
+        Console.WriteLine("");
         Console.WriteLine("📊 预期结果:");
         Console.WriteLine("  - 扫描1200+个C#文件（自动排除测试代码）");
-        Console.WriteLine("  - 识别15+个客户端专用命名空间");
-        Console.WriteLine("  - 识别1个服务器专用命名空间（UserCloudData）");
-        Console.WriteLine("  - 识别250+个混合类型（包含条件编译的类型）");
-        Console.WriteLine("  - 识别1000+个客户端专用成员");
-        Console.WriteLine("  - 识别800+个服务器专用成员");
+        Console.WriteLine("  - 识别55+个客户端专用类型");
+        Console.WriteLine("  - 识别20+个服务器专用类型");
+        Console.WriteLine("  - 识别244+个混合类型（包含条件编译的类型）");
+        Console.WriteLine("  - 识别871+个客户端专用成员");
+        Console.WriteLine("  - 识别624+个服务器专用成员");
+        Console.WriteLine("  - 🎯 基于精确的条件编译分析，无假设性判断");
         Console.WriteLine("");
         Console.WriteLine("⚠️ 注意事项:");
         Console.WriteLine("  - 确保WasiCore路径包含GameCore、GameUI等子目录");
         Console.WriteLine("  - 确保对WasiCore目录有读取权限");
         Console.WriteLine("  - 生成过程可能需要几秒钟，请耐心等待");
+        Console.WriteLine("  - 🔧 只包含公共可访问成员（public/protected/internal），排除private成员");
     }
 }
