@@ -4,6 +4,8 @@
     <TargetFramework>net9.0</TargetFramework>
     <LangVersion>preview</LangVersion>
     <Nullable>enable</Nullable>
+    <!-- 默认使用Release配置 -->
+    <Configuration>Release</Configuration>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>WasiCompatibilityAnalyzer</PackageId>
     <PackageVersion>1.0.0</PackageVersion>
@@ -15,17 +17,7 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <!-- 禁用分析器开发风格警告，不影响核心功能 -->
     <NoWarn>$(NoWarn);RS1033;RS2007;NU5128</NoWarn>
-    <!-- 设置输出路径到 WasiCoreSDK\EditorTools\ -->
-    <OutputPath>../WasiCoreSDK/tools/CodeAnalyzer/</OutputPath>
-    <!-- 禁止在输出路径后添加目标框架目录 -->
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <!-- 将NuGet包输出到单独的目录，避免污染工具目录 -->
-    <PackageOutputPath>bin/packages/</PackageOutputPath>
-    <!-- 控制构建产物，只输出必要的文件 -->
-    <DebugType>none</DebugType>
-    <DebugSymbols>false</DebugSymbols>
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
-    <GenerateDependencyFile>false</GenerateDependencyFile>
+   
   </PropertyGroup>
 
   <ItemGroup>
@@ -57,14 +49,6 @@
     <ItemGroup>
       <TfmSpecificPackageFile Include="$(OutputPath)/WasiCompatibilityAnalyzer.dll" PackagePath="analyzers/dotnet/cs/WasiCompatibilityAnalyzer.dll" />
     </ItemGroup>
-  </Target>
-
-  <!-- 确保分析器 DLL 输出到 EditorTools 目录 -->
-  <Target Name="CopyToEditorTools" AfterTargets="Build">
-    <Copy SourceFiles="$(OutputPath)WasiCompatibilityAnalyzer.dll" 
-          DestinationFolder="../WasiCoreSDK/tools/CodeAnalyzer/" 
-          SkipUnchangedFiles="true" />
-    <Message Text="已复制分析器到: ../WasiCoreSDK/tools/CodeAnalyzer/WasiCompatibilityAnalyzer.dll" Importance="high" />
   </Target>
 
 </Project>
