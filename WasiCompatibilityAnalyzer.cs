@@ -112,17 +112,9 @@ namespace WasiCompatibilityAnalyzer
         isEnabledByDefault: true,
         description: "Task.Run在WebAssembly环境中不可用，WebAssembly不支持多线程操作。");
 
-    public static readonly DiagnosticDescriptor ConsoleRule = new(
-        "WASI003",
-        "不允许使用Console类，请使用Game.Logger代替",
-        "在WebAssembly环境中不应使用Console.{0}，请使用Game.Logger.LogInformation等方法代替",
-        "WebAssembly兼容性",
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        description: "Console类在WebAssembly环境中不可用，请使用Game.Logger进行日志记录。");
 
     public static readonly DiagnosticDescriptor ThreadRule = new(
-        "WASI004",
+        "WASI003",
         "不允许使用Thread类，WebAssembly不支持多线程",
         "在WebAssembly环境中不应使用Thread.{0}，WebAssembly不支持多线程操作",
         "WebAssembly兼容性",
@@ -131,7 +123,7 @@ namespace WasiCompatibilityAnalyzer
         description: "Thread类在WebAssembly环境中完全不可用。");
 
     public static readonly DiagnosticDescriptor ThreadPoolRule = new(
-        "WASI005",
+        "WASI004",
         "不允许使用ThreadPool类，WebAssembly不支持多线程",
         "在WebAssembly环境中不应使用ThreadPool.{0}，WebAssembly不支持线程池操作",
         "WebAssembly兼容性",
@@ -140,7 +132,7 @@ namespace WasiCompatibilityAnalyzer
         description: "ThreadPool类在WebAssembly环境中完全不可用。");
 
     public static readonly DiagnosticDescriptor ParallelRule = new(
-        "WASI006",
+        "WASI005",
         "不允许使用Parallel类，WebAssembly不支持并行处理",
         "在WebAssembly环境中不应使用Parallel.{0}，请使用顺序异步处理代替",
         "WebAssembly兼容性",
@@ -149,7 +141,7 @@ namespace WasiCompatibilityAnalyzer
         description: "Parallel类在WebAssembly环境中不可用，不支持并行处理。");
 
     public static readonly DiagnosticDescriptor FileSystemRule = new(
-        "WASI007", 
+        "WASI006", 
         "不允许直接使用文件系统API，请使用框架提供的方法",
         "在WebAssembly环境中不应使用{0}，请使用Game.FileSystem或相关框架方法",
         "WebAssembly兼容性",
@@ -158,7 +150,7 @@ namespace WasiCompatibilityAnalyzer
         description: "直接的文件系统访问在WebAssembly环境中受限。");
 
     public static readonly DiagnosticDescriptor NetworkingRule = new(
-        "WASI008",
+        "WASI007",
         "不允许直接使用网络API，请使用框架提供的方法", 
         "在WebAssembly环境中不应使用{0}，请使用Game.Network或相关框架方法",
         "WebAssembly兼容性",
@@ -167,7 +159,7 @@ namespace WasiCompatibilityAnalyzer
         description: "直接的网络访问在WebAssembly环境中受限。");
 
     public static readonly DiagnosticDescriptor ProcessRule = new(
-        "WASI009",
+        "WASI008",
         "不允许使用Process类，WebAssembly不支持进程操作",
         "在WebAssembly环境中不应使用Process.{0}，WebAssembly不支持进程操作",
         "WebAssembly兼容性",
@@ -176,7 +168,7 @@ namespace WasiCompatibilityAnalyzer
         description: "Process类在WebAssembly环境中完全不可用。");
 
     public static readonly DiagnosticDescriptor RegistryRule = new(
-        "WASI010",
+        "WASI009",
         "不允许使用Registry类，WebAssembly不支持注册表访问",
         "在WebAssembly环境中不应使用Registry.{0}，WebAssembly不支持注册表操作",
         "WebAssembly兼容性",
@@ -185,7 +177,7 @@ namespace WasiCompatibilityAnalyzer
         description: "Registry类在WebAssembly环境中不可用。");
 
     public static readonly DiagnosticDescriptor TimerRule = new(
-        "WASI011",
+        "WASI010",
         "不允许使用System.Timers.Timer，请使用Game.CreateTimer代替",
         "在WebAssembly环境中不应使用System.Timers.Timer，请使用Game.CreateTimer代替",
         "WebAssembly兼容性",
@@ -194,7 +186,7 @@ namespace WasiCompatibilityAnalyzer
         description: "System.Timers.Timer在WebAssembly环境中不可用。");
 
     public static readonly DiagnosticDescriptor ObsoleteApiRule = new(
-        "WASI012",
+        "WASI011",
         "不允许使用已过时的API",
         "不建议在WebAssembly环境中使用已过时的API '{0}': {1}",
         "WebAssembly兼容性",
@@ -203,7 +195,7 @@ namespace WasiCompatibilityAnalyzer
         description: "过时的API可能在WebAssembly环境中存在兼容性问题，建议使用推荐的替代方案。");
 
     public static readonly DiagnosticDescriptor HiddenApiRule = new(
-        "WASI013",
+        "WASI012",
         "不允许使用编辑器隐藏的内部API",
         "不应在WebAssembly环境中使用编辑器隐藏的内部API '{0}'，这些API为内部实现细节",
         "WebAssembly兼容性",
@@ -212,7 +204,7 @@ namespace WasiCompatibilityAnalyzer
         description: "编辑器隐藏的API通常为内部实现细节，在WebAssembly环境中使用可能导致不可预期的行为。");
 
     public static readonly DiagnosticDescriptor ClientOnlyApiRule = new(
-        "WASI014",
+        "WASI013",
         "客户端专用API需要#if CLIENT",
         "客户端专用API '{0}' 必须在 #if CLIENT 预处理指令内使用",
         "平台专用API",
@@ -221,7 +213,7 @@ namespace WasiCompatibilityAnalyzer
         description: "此API仅在客户端可用，必须使用 #if CLIENT 进行条件编译，否则服务器编译会失败。");
 
     public static readonly DiagnosticDescriptor ServerOnlyApiRule = new(
-        "WASI015",
+        "WASI014",
         "服务器专用API需要#if SERVER",
         "服务器专用API '{0}' 必须在 #if SERVER 预处理指令内使用",
         "平台专用API",
@@ -233,7 +225,7 @@ namespace WasiCompatibilityAnalyzer
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(
-            TaskDelayRule, TaskRunRule, ConsoleRule, ThreadRule, ThreadPoolRule, 
+            TaskDelayRule, TaskRunRule, ThreadRule, ThreadPoolRule, 
             ParallelRule, FileSystemRule, NetworkingRule, ProcessRule, RegistryRule, TimerRule,
             ObsoleteApiRule, HiddenApiRule, ClientOnlyApiRule, ServerOnlyApiRule);
 
@@ -317,10 +309,6 @@ namespace WasiCompatibilityAnalyzer
         {
             case "System.Threading.Tasks.Task":
                 CheckTaskMethods(context, node, memberName);
-                break;
-                
-            case "System.Console":
-                ReportDiagnostic(context, ConsoleRule, node, memberName);
                 break;
                 
             case "System.Threading.Thread":
@@ -407,10 +395,6 @@ namespace WasiCompatibilityAnalyzer
         // 检查静态成员访问和实例成员访问
         switch (typeFullName)
         {
-            case "System.Console":
-                ReportDiagnostic(context, ConsoleRule, node, memberName);
-                break;
-                
             case "System.Threading.Thread":
                 CheckThreadMemberAccess(context, node, memberName);
                 break;
