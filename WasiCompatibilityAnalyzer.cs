@@ -221,13 +221,23 @@ namespace WasiCompatibilityAnalyzer
         isEnabledByDefault: true,
         description: "此API仅在服务器可用，必须使用 #if SERVER 进行条件编译，否则客户端编译会失败。");
 
+    public static readonly DiagnosticDescriptor GameModeNotInitializedRule = new(
+        "WASI015",
+        "GameMode未初始化",
+        "GameMode '{0}' 已定义但未创建对应的 GameDataGameMode 实例，这将导致运行时错误",
+        "游戏数据完整性",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "每个定义的 GameMode 必须有对应的 GameDataGameMode 实例，否则在运行时使用该 GameMode 会报错：'Game Mode is set to XXX, but the data is not set, using default game mode'",
+        customTags: "CompilationEnd");
+
     #endregion
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(
             TaskDelayRule, TaskRunRule, ThreadRule, ThreadPoolRule, 
             ParallelRule, FileSystemRule, NetworkingRule, ProcessRule, RegistryRule, TimerRule,
-            ObsoleteApiRule, HiddenApiRule, ClientOnlyApiRule, ServerOnlyApiRule);
+            ObsoleteApiRule, HiddenApiRule, ClientOnlyApiRule, ServerOnlyApiRule, GameModeNotInitializedRule);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -236,6 +246,7 @@ namespace WasiCompatibilityAnalyzer
         context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
         context.RegisterSyntaxNodeAction(AnalyzeObjectCreation, SyntaxKind.ObjectCreationExpression);
         context.RegisterSyntaxNodeAction(AnalyzeMemberAccess, SyntaxKind.SimpleMemberAccessExpression);
+        context.RegisterCompilationAction(AnalyzeGameModeInitialization);
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
@@ -771,6 +782,99 @@ namespace WasiCompatibilityAnalyzer
         // 简化的检查：假设如果找到了#if指令，则认为它有对应的#endif
         // 在实际应用中，可能需要更复杂的逻辑来确保配对正确
         return true;
+    }
+
+    /// <summary>
+    /// 分析GameMode是否都已正确初始化
+    /// 检查所有定义的GameMode是否都有对应的GameDataGameMode实例
+    /// </summary>
+    private static void AnalyzeGameModeInitialization(CompilationAnalysisContext context)
+    {
+        // 存储定义的GameMode及其位置
+        var definedGameModes = new Dictionary<string, Location>();
+        
+        // 存储已实例化的GameMode
+        var initializedGameModes = new HashSet<string>();
+
+        foreach (var syntaxTree in context.Compilation.SyntaxTrees)
+        {
+            var root = syntaxTree.GetRoot(context.CancellationToken);
+
+            // 1. 查找所有定义的GameMode字段
+            // 🔧 改进：不限制在ScopeData类中，查找所有GameLink<GameDataGameMode>字段
+            var fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>();
+            
+            foreach (var field in fields)
+            {
+                // 使用语法检查而不是语义检查，以提高可靠性
+                var fieldTypeSyntax = field.Declaration.Type.ToString();
+                
+                // 检查是否是GameLink<GameDataGameMode, GameDataGameMode>类型
+                // 使用Contains而不是精确匹配，以兼容不同的命名空间前缀
+                if (fieldTypeSyntax.Contains("GameLink<") && 
+                    fieldTypeSyntax.Contains("GameDataGameMode"))
+                {
+                    // 获取字段名
+                    foreach (var variable in field.Declaration.Variables)
+                    {
+                        var fieldName = variable.Identifier.ValueText;
+                        
+                        // 避免重复（如果在多个partial class中重复定义）
+                        if (!definedGameModes.ContainsKey(fieldName))
+                        {
+                            definedGameModes[fieldName] = variable.GetLocation();
+                        }
+                    }
+                }
+            }
+
+            // 2. 查找所有GameDataGameMode的实例化
+            var objectCreations = root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>();
+            
+            foreach (var creation in objectCreations)
+            {
+                // 先检查语法层面的类型名称
+                var creationType = creation.Type;
+                var syntaxTypeName = creationType.ToString();
+                
+                // 如果语法上看起来像GameDataGameMode，则进一步检查
+                if (syntaxTypeName.Contains("GameDataGameMode"))
+                {
+                    // 获取构造函数参数（GameMode.XXX）
+                    if (creation.ArgumentList?.Arguments.Count > 0)
+                    {
+                        var firstArg = creation.ArgumentList.Arguments[0].Expression;
+                        
+                        // 提取GameMode字段名
+                        if (firstArg is MemberAccessExpressionSyntax memberAccess)
+                        {
+                            var gameModeName = memberAccess.Name.Identifier.ValueText;
+                            initializedGameModes.Add(gameModeName);
+                        }
+                        else if (firstArg is IdentifierNameSyntax identifier)
+                        {
+                            initializedGameModes.Add(identifier.Identifier.ValueText);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. 对比检查：找出定义了但未初始化的GameMode
+        foreach (var definedMode in definedGameModes)
+        {
+            var gameModeName = definedMode.Key;
+            var location = definedMode.Value;
+            
+            if (!initializedGameModes.Contains(gameModeName))
+            {
+                var diagnostic = Diagnostic.Create(
+                    GameModeNotInitializedRule, 
+                    location, 
+                    gameModeName);
+                context.ReportDiagnostic(diagnostic);
+            }
+        }
     }
 
     private static void ReportDiagnostic(SyntaxNodeAnalysisContext context, 

@@ -12,28 +12,30 @@ WebAssembly兼容性分析器已经创建完成并测试通过！
 |---------|------|-------------|
 | **WASI001** | `Task.Delay()` | `Game.Delay()` |
 | **WASI002** | `Task.Run()` | 使用 async/await 模式 |
-| **WASI003** | `Console.*` 全部方法 | `Game.Logger.LogXXX()` |
-| **WASI004** | `Thread.*` 全部成员 | 避免多线程，使用异步 |
-| **WASI005** | `ThreadPool.*` 全部成员 | 避免线程池操作 |
-| **WASI006** | `Parallel.*` 全部成员 | 使用顺序异步处理 |
-| **WASI007** | 文件系统API | `Game.FileSystem` |
-| **WASI008** | 网络API | `Game.Network` |
-| **WASI009** | `Process.*` 进程操作 | 不支持 |
-| **WASI010** | `Registry.*` 注册表 | 不支持 |
-| **WASI011** | `System.Timers.Timer` | `Game.CreateTimer()` |
-| **WASI012** ⚠️ | 标记为过时的API (ObsoleteAttribute) | 使用推荐的替代方案 |
-| **WASI013** ⚠️ | 编辑器隐藏的内部API (EditorBrowsableAttribute.Never) | 避免使用内部实现细节 |
-| **WASI014** | 客户端专用API未包含在 `#if CLIENT` | 将代码包裹在 `#if CLIENT` 中 |
-| **WASI015** | 服务器专用API未包含在 `#if SERVER` | 将代码包裹在 `#if SERVER` 中 |
+| **WASI003** | `Thread.*` 全部成员 | 避免多线程，使用异步 |
+| **WASI004** | `ThreadPool.*` 全部成员 | 避免线程池操作 |
+| **WASI005** | `Parallel.*` 全部成员 | 使用顺序异步处理 |
+| **WASI006** | 文件系统API | `Game.FileSystem` |
+| **WASI007** | 网络API | `Game.Network` |
+| **WASI008** | `Process.*` 进程操作 | 不支持 |
+| **WASI009** | `Registry.*` 注册表 | 不支持 |
+| **WASI010** | `System.Timers.Timer` | `Game.CreateTimer()` |
+| **WASI011** ⚠️ | 标记为过时的API (ObsoleteAttribute) | 使用推荐的替代方案 |
+| **WASI012** ⚠️ | 编辑器隐藏的内部API (EditorBrowsableAttribute.Never) | 避免使用内部实现细节 |
+| **WASI013** | 客户端专用API未包含在 `#if CLIENT` | 将代码包裹在 `#if CLIENT` 中 |
+| **WASI014** | 服务器专用API未包含在 `#if SERVER` | 将代码包裹在 `#if SERVER` 中 |
+| **WASI015** | GameMode定义但未初始化 | 创建对应的 `GameDataGameMode` 实例 |
 
 ### 📋 规则说明
 
 - **❌ Error级别**: 这些API会阻止编译，必须修改
 - **⚠️ Warning级别**: 这些API会产生警告，建议修改但不阻止编译
 
-**WASI012** 检测所有标记为 `[Obsolete]` 的API，过时的API可能在WebAssembly环境中存在兼容性问题。
+**WASI011** 检测所有标记为 `[Obsolete]` 的API，过时的API可能在WebAssembly环境中存在兼容性问题。
 
-**WASI013** 检测所有标记为 `[EditorBrowsable(EditorBrowsableState.Never)]` 的内部API，这些API为框架内部实现，不应在用户代码中直接使用。
+**WASI012** 检测所有标记为 `[EditorBrowsable(EditorBrowsableState.Never)]` 的内部API，这些API为框架内部实现，不应在用户代码中直接使用。
+
+**WASI015** 检测GameMode定义但未初始化的问题。当在`ScopeData.GameMode`中定义了GameMode字段，但没有创建对应的`GameDataGameMode`实例时，运行时会报错"Game Mode is set to XXX, but the data is not set, using default game mode"。这个分析器在编译期就能发现这个问题。
 
 ## 🚀 集成到项目
 
