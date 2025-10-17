@@ -15,7 +15,7 @@ WebAssembly兼容性分析器已经创建完成并测试通过！
 | **WASI003** | `Thread.*` 全部成员 | 避免多线程，使用异步 |
 | **WASI004** | `ThreadPool.*` 全部成员 | 避免线程池操作 |
 | **WASI005** | `Parallel.*` 全部成员 | 使用顺序异步处理 |
-| **WASI006** | 文件系统API | `Game.FileSystem` |
+| **WASI006** ⚠️ | 文件系统API | `Game.FileSystem`（建议，但直接使用也可） |
 | **WASI007** | 网络API | `Game.Network` |
 | **WASI008** | `Process.*` 进程操作 | 不支持 |
 | **WASI009** | `Registry.*` 注册表 | 不支持 |
@@ -34,6 +34,8 @@ WebAssembly兼容性分析器已经创建完成并测试通过！
 **WASI011** 检测所有标记为 `[Obsolete]` 的API，过时的API可能在WebAssembly环境中存在兼容性问题。
 
 **WASI012** 检测所有标记为 `[EditorBrowsable(EditorBrowsableState.Never)]` 的内部API，这些API为框架内部实现，不应在用户代码中直接使用。
+
+**WASI006** 检测文件系统API的使用。虽然File、Directory等API在WebAssembly环境中是可用的，但它们只能访问WASM沙箱内有权限的文件夹。建议使用`Game.FileSystem`以获得更好的跨平台支持和更明确的权限管理。
 
 **WASI015** 检测GameMode定义但未初始化的问题。当在`ScopeData.GameMode`中定义了GameMode字段，但没有创建对应的`GameDataGameMode`实例时，运行时会报错"Game Mode is set to XXX, but the data is not set, using default game mode"。这个分析器在编译期就能发现这个问题。
 
@@ -68,11 +70,14 @@ WebAssembly兼容性分析器已经创建完成并测试通过！
 
 ```csharp
 // ❌ 这些代码会产生编译错误
-await Task.Delay(1000);                    // WASI001
-Console.WriteLine("Hello");                // WASI003  
-var thread = new Thread(() => {});         // WASI004
-thread.Start();                            // WASI004
-File.ReadAllText("test.txt");              // WASI007
+await Task.Delay(1000);                    // WASI001 Error
+Console.WriteLine("Hello");                // WASI003 Error
+var thread = new Thread(() => {});         // WASI003 Error
+thread.Start();                            // WASI003 Error
+
+// ⚠️ 这些代码会产生警告（可用但受限）
+File.ReadAllText("test.txt");              // WASI006 Warning: 仅能访问沙箱内有权限的文件夹
+Directory.GetFiles("./data");              // WASI006 Warning: 仅能访问沙箱内有权限的文件夹
 ```
 
 ### 平台专用API检测
@@ -113,6 +118,10 @@ public class MyGame
 await Game.Delay(1000);                    // 替代 Task.Delay
 Game.Logger.LogInformation("Hello");       // 替代 Console.WriteLine
 Game.CreateTimer(1000, () => {});          // 替代 Timer
+
+// 📁 文件系统 - 两种方式都可以
+Game.FileSystem.ReadAllText("data.txt");   // 推荐：使用框架API
+File.ReadAllText("data.txt");              // 也可以：直接使用，但仅限沙箱内有权限的文件夹
 ```
 
 ## 🔧 开发团队使用建议
@@ -121,6 +130,51 @@ Game.CreateTimer(1000, () => {});          // 替代 Timer
 2. **CI/CD集成**：构建服务器会自动拒绝不兼容的代码  
 3. **IDE集成**：Visual Studio/Rider中会实时显示错误波浪线
 4. **团队培训**：确保所有开发者了解WebAssembly环境的限制
+
+## 📁 文件系统API说明 (WASI006)
+
+### ✅ 文件系统API在WASM环境中可用
+
+与其他被完全禁用的API（如`Thread`、`Task.Delay`）不同，**文件系统API（File、Directory等）在WebAssembly环境中是可以正常使用的**。
+
+### ⚠️ 沙箱限制
+
+文件系统API受到WASM沙箱的限制，只能访问特定的有权限的文件夹：
+
+```csharp
+// ✅ 可以访问沙箱内的文件
+File.ReadAllText("./data/config.json");        // OK: 相对路径
+File.WriteAllText("./save/game.dat", data);    // OK: 保存数据
+
+// ❌ 无法访问沙箱外的系统文件
+File.ReadAllText("C:\\Windows\\System32\\...");  // 失败: 无权限
+File.ReadAllText("/etc/passwd");                 // 失败: 无权限
+```
+
+### 🎯 推荐做法
+
+虽然可以直接使用`System.IO`命名空间下的API，但**建议使用框架提供的`Game.FileSystem`**，原因：
+
+1. **更好的跨平台支持** - 自动处理不同平台的路径差异
+2. **明确的权限管理** - 框架会引导你使用正确的目录
+3. **更好的错误处理** - 提供更友好的错误信息
+4. **未来兼容性** - 框架可能会添加额外的功能
+
+```csharp
+// 🌟 推荐：使用框架API
+var content = Game.FileSystem.ReadAllText("data/config.json");
+Game.FileSystem.WriteAllText("save/game.dat", data);
+
+// ⚠️ 也可以：直接使用（会产生Warning提示）
+var content = File.ReadAllText("data/config.json");
+File.WriteAllText("save/game.dat", data);
+```
+
+### 🔧 分析器行为
+
+- **级别**: Warning（警告，不阻止编译）
+- **目的**: 提醒开发者注意沙箱限制，建议使用框架API
+- **可以忽略**: 如果你了解限制并确认可以直接使用，可以忽略此警告
 
 ## 🎯 新增功能：平台专用API检测
 

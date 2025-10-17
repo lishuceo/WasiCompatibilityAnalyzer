@@ -142,12 +142,12 @@ namespace WasiCompatibilityAnalyzer
 
     public static readonly DiagnosticDescriptor FileSystemRule = new(
         "WASI006", 
-        "不允许直接使用文件系统API，请使用框架提供的方法",
-        "在WebAssembly环境中不应使用{0}，请使用Game.FileSystem或相关框架方法",
+        "文件系统API仅能访问WASM沙箱环境内有权限的文件夹",
+        "{0} 在WebAssembly环境中可用，但仅能访问沙箱内有权限的文件夹。建议使用Game.FileSystem以获得更好的跨平台支持",
         "WebAssembly兼容性",
-        DiagnosticSeverity.Error,
+        DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "直接的文件系统访问在WebAssembly环境中受限。");
+        description: "文件系统API在WebAssembly环境中可用，但受沙箱限制，只能访问特定的有权限的文件夹。");
 
     public static readonly DiagnosticDescriptor NetworkingRule = new(
         "WASI007",

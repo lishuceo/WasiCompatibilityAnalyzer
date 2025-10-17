@@ -1,6 +1,8 @@
 // 这个文件用于测试WasiCompatibilityAnalyzer的检测功能
 
 using System;
+using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TestAnalyzer;
@@ -30,5 +32,20 @@ public class TestBasicDetection
         
         // 模拟正确的游戏API调用
         // await Game.Delay(TimeSpan.FromSeconds(1));
+    }
+    
+    public void TestFileSystemAPIs()
+    {
+        // ⚠️ 应该产生 WASI006 Warning（而不是Error）
+        // 文件系统API可用，但受沙箱限制
+        var content = File.ReadAllText("test.txt");
+        File.WriteAllText("output.txt", "data");
+        Directory.CreateDirectory("folder");
+        
+        // 同样应该产生Warning
+        var files = Directory.GetFiles("./data");
+        var stream = new FileStream("test.dat", FileMode.Open);
+        var reader = new StreamReader("test.txt");
+        var writer = new StreamWriter("output.txt");
     }
 }
